@@ -34,22 +34,88 @@ pnpm build && pnpm start
 | --------------------- | -------------------------------------------------------------------- | ------ |
 | `PORT`                | Port d'écoute (le serveur écoute sur `0.0.0.0`)                      | `3000` |
 | `DATABASE_URL`        | Connexion Postgres (injectée par Coolify, réseau Docker interne)     | —      |
-| `EDNAH_REGISTRY_KEY`  | Clé d'API partagée exigée dans `X-Ednah-Key` (sauf `/api/health`)   | —      |
+| `EDNAH_REGISTRY_KEY`  | Clé d'API partagée exigée dans `X-Ednah-Key` (sauf routes publiques) | —      |
 | `EDNAH_CORS_ORIGIN`   | Origine CORS autorisée                                               | `*`    |
+| `EDNAH_ACCESS_CODE`   | Code d'accès attendu par `POST /api/auth/login`. **Absent → login refusé (503)** | — |
+
+### Variables `CLIENT_*` (config renvoyée par le bootstrap)
+
+Renvoyées à l'app Studio par `POST /api/auth/login` **après login réussi**
+(l'app ne saisit jamais ces valeurs elle-même). À configurer côté serveur (Coolify).
+
+| Variable                     | Renvoyé comme            | Notes                                  |
+| ---------------------------- | ------------------------ | -------------------------------------- |
+| `CLIENT_REGISTRY_URL`        | `config.registry_url`    | URL de base du Registry                |
+| `CLIENT_COOLIFY_URL`         | `config.coolify_url`     | URL de l'API Coolify                   |
+| `CLIENT_COOLIFY_SERVER_UUID` | `config.coolify_server_uuid` |                                    |
+| `CLIENT_DEV_DOMAIN`          | `config.dev_domain`      | ex: `dev.ednah-group.com`              |
+| `CLIENT_GITHUB_APP_UUID`     | `config.github_app_uuid` |                                        |
+| `CLIENT_GITHUB_OWNER`        | `config.github_owner`    |                                        |
+| `CLIENT_COOLIFY_TOKEN`       | `config.coolify_token`   | **🔒 secret** — token API Coolify      |
+| `CLIENT_GITHUB_TOKEN`        | `config.github_token`    | **🔒 secret** — token GitHub           |
+
+> `config.registry_key` (= `EDNAH_REGISTRY_KEY`) est aussi renvoyé, pour que
+> l'app puisse ensuite appeler les routes protégées avec le header `X-Ednah-Key`.
 
 Si `EDNAH_REGISTRY_KEY` n'est **pas** défini : mode dev, l'auth est désactivée
 (un warning est loggé). Aucun secret n'est jamais écrit en dur dans le repo.
 
 ## Authentification
 
-Toutes les routes **sauf `GET /api/health`** exigent le header :
+Toutes les routes **sauf les routes publiques** exigent le header :
 
 ```
 X-Ednah-Key: <valeur de EDNAH_REGISTRY_KEY>
 ```
 
+Routes **publiques** (pas de header) : `GET /api/health` et `POST /api/auth/login`.
 Une clé absente ou incorrecte renvoie `401 { "error": "Unauthorized" }`.
 En mode dev (clé non définie côté serveur), aucune clé n'est requise.
+
+### Login par code d'accès + bootstrap (app Studio)
+
+`POST /api/auth/login` permet à l'app Studio (sur le PC de l'utilisatrice) de se
+connecter avec un **code d'accès** + un **profil**, et de récupérer toute sa
+config depuis le serveur : elle ne saisit jamais de clés ni de tokens.
+
+**Sécurité :**
+- Route **publique** (pas de `X-Ednah-Key`) : c'est le login qui fournit la clé à l'app.
+- Si `EDNAH_ACCESS_CODE` n'est pas défini côté serveur → **`503 { "error": "login non configuré" }`** (rien ne passe).
+- Code invalide → **`401`** après un petit délai (~300 ms) anti-brute-force ; la tentative
+  est loggée **sans** le code.
+- La réponse contient des **secrets** (`coolify_token`, `github_token`, `registry_key`) :
+  c'est voulu (l'app en a besoin), mais renvoyés **uniquement** ici, **après login réussi**,
+  **jamais** sur un GET et **jamais loggés**.
+
+**Body :**
+```json
+{ "accessCode": "le-code-d-acces", "profile": "Imri" }
+```
+`profile` est optionnel (`"Imri"` | `"Déborah"`, …) ; s'il est fourni, l'utilisateur
+est résolu ou créé dans la table `users`.
+
+**Réponse `200` (bootstrap) :**
+```json
+{
+  "ok": true,
+  "config": {
+    "registry_url": "https://registry.dev.ednah-group.com",
+    "registry_key": "<EDNAH_REGISTRY_KEY>",
+    "coolify_url": "https://coolify.ednah-group.com",
+    "coolify_server_uuid": "…",
+    "dev_domain": "dev.ednah-group.com",
+    "github_app_uuid": "…",
+    "coolify_token": "<secret>",
+    "github_token": "<secret>",
+    "github_owner": "ednah-group"
+  },
+  "user": { "id": 1, "name": "Imri" }
+}
+```
+`user` est présent uniquement si `profile` a été fourni. Les valeurs de `config`
+proviennent des variables d'env `CLIENT_*` (+ `EDNAH_REGISTRY_KEY`).
+
+Réponses : `400` (body invalide) · `401` (code invalide) · `503` (login non configuré).
 
 ## Déploiement Coolify
 
@@ -111,6 +177,11 @@ Toutes les réponses sont en JSON. Erreurs : `400` (entrée invalide, `{ "error"
 ### Santé
 - `GET /api/health` → `200 { "status": "ok" }` — **pas d'auth**.
 
+### Auth
+- `POST /api/auth/login` — **pas d'auth** (route publique). body `{ "accessCode": string, "profile"?: string }`
+  → `200 { ok, config, user? }` (bootstrap, cf. section [Login par code d'accès](#login-par-code-dacces--bootstrap-app-studio))
+  · `401` code invalide · `503` login non configuré.
+
 ### Users
 - `GET /api/users` → `200 User[]`
 - `POST /api/users` — body `{ "name": string }` → `201 User`
@@ -161,6 +232,11 @@ BASE="https://registry.ednah-group.com/api"   # ou http://localhost:3000/api
 
 # Santé (pas d'auth)
 curl -s $BASE/health
+
+# Login + bootstrap (pas d'auth) — renvoie la config client (dont des secrets)
+curl -s -X POST $BASE/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"accessCode":"le-code-d-acces","profile":"Imri"}'
 
 # Créer un utilisateur
 curl -s -X POST $BASE/users \

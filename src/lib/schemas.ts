@@ -13,6 +13,14 @@ export const createUserSchema = z.object({
   name: z.string().trim().min(1).max(80),
 });
 
+// --- Auth / login (route publique, sans X-Ednah-Key) ---
+// accessCode : code d'accès saisi par l'utilisatrice dans l'app Studio.
+// profile : profil optionnel ("Imri" | "Déborah"), résolu/créé dans users.
+export const loginSchema = z.object({
+  accessCode: z.string().min(1).max(200),
+  profile: z.string().trim().min(1).max(80).optional(),
+});
+
 // --- Groups ---
 export const createGroupSchema = z.object({
   name: z.string().trim().min(1).max(80),

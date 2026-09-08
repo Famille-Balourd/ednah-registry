@@ -5,6 +5,7 @@ import cors from "@fastify/cors";
 import { registerUserRoutes } from "./routes/users.js";
 import { registerGroupRoutes } from "./routes/groups.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = "0.0.0.0"; // OBLIGATOIRE pour le déploiement conteneurisé (Coolify)
@@ -27,8 +28,16 @@ if (!registryKey) {
   );
 }
 
+// Routes PUBLIQUES (pas de header X-Ednah-Key). /api/auth/login est public
+// car l'app ne connaît pas encore la clé : c'est justement le login qui la lui
+// fournit (via le bootstrap), après validation du code d'accès.
+function isPublicRoute(url: string): boolean {
+  const path = url.split("?")[0];
+  return path === "/api/health" || path === "/api/auth/login";
+}
+
 app.addHook("onRequest", async (req, reply) => {
-  if (req.url === "/api/health" || req.url.startsWith("/api/health?")) return;
+  if (isPublicRoute(req.url)) return;
   if (!registryKey) return; // mode dev : pas de clé configurée
   const provided = req.headers["x-ednah-key"];
   if (provided !== registryKey) {
@@ -38,6 +47,9 @@ app.addHook("onRequest", async (req, reply) => {
 
 // --- Route santé obligatoire (healthcheck Coolify). Ne pas supprimer. ---
 app.get("/api/health", async () => ({ status: "ok" }));
+
+// --- Route publique : login + bootstrap de la config client ---
+await registerAuthRoutes(app);
 
 // --- Routes métier ---
 await registerUserRoutes(app);
