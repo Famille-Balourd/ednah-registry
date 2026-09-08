@@ -21,6 +21,11 @@ export const loginSchema = z.object({
   profile: z.string().trim().min(1).max(80).optional(),
 });
 
+// --- Presence (tracker en ligne / hors ligne) ---
+export const heartbeatSchema = z.object({
+  userId: z.number().int().positive(),
+});
+
 // --- Groups ---
 export const createGroupSchema = z.object({
   name: z.string().trim().min(1).max(80),

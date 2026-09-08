@@ -1,11 +1,12 @@
-// Point d'entrée d'Ednah Registry (Fastify + Drizzle + Postgres).
-// Source de vérité des projets de la plateforme Ednah.
+// Point d'entrée d'Studio Registry (Fastify + Drizzle + Postgres).
+// Source de vérité des projets de la plateforme Studio.
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { registerUserRoutes } from "./routes/users.js";
 import { registerGroupRoutes } from "./routes/groups.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerPresenceRoutes } from "./routes/presence.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const HOST = "0.0.0.0"; // OBLIGATOIRE pour le déploiement conteneurisé (Coolify)
@@ -16,7 +17,7 @@ const app = Fastify({
 });
 
 // --- CORS (configurable via env, défaut *) ---
-const corsOrigin = process.env.EDNAH_CORS_ORIGIN ?? "*";
+const corsOrigin = process.env.STUDIO_CORS_ORIGIN ?? "*";
 await app.register(cors, { origin: corsOrigin });
 
 // --- Auth : header X-Ednah-Key sur toutes les routes SAUF /api/health ---
@@ -55,6 +56,7 @@ await registerAuthRoutes(app);
 await registerUserRoutes(app);
 await registerGroupRoutes(app);
 await registerProjectRoutes(app);
+await registerPresenceRoutes(app);
 
 // --- Handler d'erreur : message générique, pas de stack renvoyée au client ---
 app.setErrorHandler((err, _req, reply) => {
@@ -67,7 +69,7 @@ app.setErrorHandler((err, _req, reply) => {
 
 app
   .listen({ port: PORT, host: HOST })
-  .then(() => app.log.info(`Ednah Registry démarré sur http://${HOST}:${PORT}`))
+  .then(() => app.log.info(`Studio Registry démarré sur http://${HOST}:${PORT}`))
   .catch((err) => {
     app.log.error(err);
     process.exit(1);

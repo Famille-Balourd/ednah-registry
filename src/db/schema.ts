@@ -1,4 +1,4 @@
-// Schéma Drizzle (PostgreSQL) — source de vérité des projets de la plateforme Ednah.
+// Schéma Drizzle (PostgreSQL) — source de vérité des projets de la plateforme Studio.
 import {
   boolean,
   index,
@@ -14,6 +14,8 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  // Dernière activité connue (heartbeat de l'app). Nullable : null = jamais vu.
+  lastSeen: timestamp("last_seen", { withTimezone: true }),
 });
 
 // --- groups : groupes personnalisés pour organiser les projets ---
@@ -27,7 +29,7 @@ export const groups = pgTable("groups", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-// --- projects : le catalogue central des projets Ednah ---
+// --- projects : le catalogue central des projets Studio ---
 export const projects = pgTable(
   "projects",
   {

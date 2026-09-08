@@ -1,6 +1,6 @@
-# Ednah Registry
+# Studio Registry
 
-**La source de vérité des projets de la plateforme Ednah.** Petit backend Fastify
+**La source de vérité des projets de la plateforme Studio.** Petit backend Fastify
 + TypeScript + PostgreSQL (via Drizzle ORM) qui stocke la liste de tous les
 projets, qui les a créés, leur état et leurs groupes.
 
@@ -35,7 +35,7 @@ pnpm build && pnpm start
 | `PORT`                | Port d'écoute (le serveur écoute sur `0.0.0.0`)                      | `3000` |
 | `DATABASE_URL`        | Connexion Postgres (injectée par Coolify, réseau Docker interne)     | —      |
 | `EDNAH_REGISTRY_KEY`  | Clé d'API partagée exigée dans `X-Ednah-Key` (sauf routes publiques) | —      |
-| `EDNAH_CORS_ORIGIN`   | Origine CORS autorisée                                               | `*`    |
+| `STUDIO_CORS_ORIGIN`   | Origine CORS autorisée                                               | `*`    |
 | `EDNAH_ACCESS_CODE`   | Code d'accès attendu par `POST /api/auth/login`. **Absent → login refusé (503)** | — |
 
 ### Variables `CLIENT_*` (config renvoyée par le bootstrap)
@@ -136,6 +136,7 @@ Réponses : `400` (body invalide) · `401` (code invalide) · `503` (login non c
 | `id`         | serial PK   |                              |
 | `name`       | text        | ex: "Imri", "Déborah"       |
 | `created_at` | timestamptz | défaut `now()`               |
+| `last_seen`  | timestamptz (null) | dernier heartbeat de l'app (présence) |
 
 ### `groups`
 | Colonne      | Type        | Notes                        |
@@ -192,6 +193,12 @@ Toutes les réponses sont en JSON. Erreurs : `400` (entrée invalide, `{ "error"
 - `PATCH /api/groups/:id` — body partiel `{ "name"?: string, "color"?: string|null }` → `200 Group` (au moins un champ)
 - `DELETE /api/groups/:id` → `204` (les projets liés passent `group_id = null`)
 
+### Presence (tracker de présence)
+- `POST /api/presence/heartbeat` — body `{ "userId": number }` → `200 { "ok": true }` | `404` (user introuvable).
+  Met à jour `users.last_seen = now()`. L'app l'appelle régulièrement (~30 s) pour se signaler active.
+- `GET /api/presence` → `200 { id, name, lastSeen, online }[]`
+  (`online = last_seen != null && now - last_seen < 90 s`). Sert à afficher l'état en ligne / hors ligne des profils.
+
 ### Projects
 - `GET /api/projects` — query optionnels `?search=&group_id=&created_by=&status=` → `200 Project[]`
   (triés par `created_at` décroissant ; `search` = recherche insensible à la casse sur `name` et `slug`)
@@ -227,7 +234,7 @@ Toutes les réponses sont en JSON. Erreurs : `400` (entrée invalide, `{ "error"
 ### Exemples curl
 
 ```bash
-KEY="votre-cle-ednah"
+KEY="votre-cle-studio"
 BASE="https://registry.ednah-group.com/api"   # ou http://localhost:3000/api
 
 # Santé (pas d'auth)

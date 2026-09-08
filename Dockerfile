@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# ---- Ednah Registry (Fastify + Drizzle + Postgres) ----
+# ---- Studio Registry (Fastify + Drizzle + Postgres) ----
 # Utilisée par Coolify pour builder/déployer automatiquement.
 
 # 1) Base avec pnpm

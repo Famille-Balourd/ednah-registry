@@ -8,6 +8,6 @@ export default {
   dialect: "postgresql",
   dbCredentials: {
     // Placeholder si non défini : drizzle-kit generate n'a pas besoin d'une vraie DB.
-    url: process.env.DATABASE_URL ?? "postgres://user:password@localhost:5432/ednah_registry",
+    url: process.env.DATABASE_URL ?? "postgres://user:password@localhost:5432/studio_registry",
   },
 } satisfies Config;

@@ -1,4 +1,4 @@
-// Routes /api/projects — le catalogue central des projets Ednah.
+// Routes /api/projects — le catalogue central des projets Studio.
 import type { FastifyInstance } from "fastify";
 import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 import { db } from "../db/client.js";
