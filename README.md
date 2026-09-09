@@ -37,6 +37,7 @@ pnpm build && pnpm start
 | `EDNAH_REGISTRY_KEY`  | Clé d'API partagée exigée dans `X-Ednah-Key` (sauf routes publiques) | —      |
 | `STUDIO_CORS_ORIGIN`   | Origine CORS autorisée                                               | `*`    |
 | `EDNAH_ACCESS_CODE`   | Code d'accès attendu par `POST /api/auth/login`. **Absent → login refusé (503)** | — |
+| `UPDATES_DIR`         | Dossier des artefacts d'update de l'app desktop (routes `/updates`). **Volume persistant en prod.** | `/data/updates` |
 
 ### Variables `CLIENT_*` (config renvoyée par le bootstrap)
 
@@ -116,6 +117,76 @@ est résolu ou créé dans la table `users`.
 proviennent des variables d'env `CLIENT_*` (+ `EDNAH_REGISTRY_KEY`).
 
 Réponses : `400` (body invalide) · `401` (code invalide) · `503` (login non configuré).
+
+## Updates (auto-update de l'app desktop Studio)
+
+Le Registry sert aussi les **mises à jour de l'app desktop Studio** (auto-update
+Tauri v2). Le repo GitHub étant **privé**, l'updater Tauri ne peut pas télécharger
+depuis les GitHub Releases (URLs 404) : l'app pointe donc sur ce service, hébergé
+sur le VPS (`registry.dev.ednah-group.com`).
+
+### Routes
+
+| Route | Auth | Rôle |
+| ----- | ---- | ---- |
+| `GET /updates/latest.json` | **publique** | Manifeste updater Tauri v2 (servi tel quel depuis `UPDATES_DIR/latest.json`). |
+| `GET /updates/:file`       | **publique** | Sert un artefact d'update depuis `UPDATES_DIR` (ex. `Studio.app.tar.gz`, `.sig`). |
+| `POST /updates/upload`     | **X-Ednah-Key** | Dépose les fichiers d'update (multipart). |
+
+Les deux routes `GET` sont **publiques** (sans `X-Ednah-Key`) car l'updater Tauri
+ne s'authentifie pas. Elles sont déclarées dans `isPublicRoute` (`src/server.ts`).
+`POST /updates/upload` reste **protégée** par la clé `X-Ednah-Key`.
+
+Fichier introuvable → `404 { "error": "Not found" }`. Le nom de fichier demandé
+est passé par `basename()` (protection contre la traversée de chemin `../`).
+
+### Où déposer les fichiers + volume persistant
+
+Les fichiers vivent dans `UPDATES_DIR` (défaut `/data/updates`). Y déposer :
+
+- `latest.json` — le manifeste updater (avec l'URL VPS de l'artefact) ;
+- `Studio.app.tar.gz` — l'artefact d'update (macOS Apple Silicon) ;
+- `Studio.app.tar.gz.sig` — la signature (optionnelle à servir, utile pour archive).
+
+> ⚠️ **Volume persistant obligatoire.** En Docker/Coolify, `UPDATES_DIR` DOIT être
+> un **Persistent Storage** monté sur `/data/updates` (ou `/data`). Sinon les
+> updates sont **perdues à chaque redéploiement** du conteneur. Le `Dockerfile`
+> crée le dossier et déclare `VOLUME ["/data/updates"]`.
+
+### Déposer via l'API (recommandé)
+
+```bash
+KEY="votre-cle-studio"
+BASE="https://registry.dev.ednah-group.com"
+
+curl -s -X POST "$BASE/updates/upload" \
+  -H "X-Ednah-Key: $KEY" \
+  -F "latest=@latest.json;filename=latest.json" \
+  -F "artifact=@Studio.app.tar.gz;filename=Studio.app.tar.gz"
+# → { "ok": true, "written": ["latest.json", "Studio.app.tar.gz"] }
+```
+
+Le nom sous lequel le fichier est écrit = son `filename` multipart (`basename`).
+Vérifier ensuite :
+
+```bash
+curl -s "$BASE/updates/latest.json"          # doit renvoyer le manifeste
+curl -sI "$BASE/updates/Studio.app.tar.gz"   # 200 + Content-Type: application/gzip
+```
+
+### Alternative : `docker cp` via SSH
+
+Si l'upload API n'est pas souhaité, copier directement dans le volume du conteneur :
+
+```bash
+ssh vps
+CID=$(docker ps --filter name=registry -q | head -1)
+docker cp latest.json          "$CID":/data/updates/latest.json
+docker cp Studio.app.tar.gz    "$CID":/data/updates/Studio.app.tar.gz
+```
+
+La procédure complète de release (build signé → upload) est décrite dans
+`desktop-app/RELEASE.md`.
 
 ## Déploiement Coolify
 
@@ -198,6 +269,12 @@ Toutes les réponses sont en JSON. Erreurs : `400` (entrée invalide, `{ "error"
   Met à jour `users.last_seen = now()`. L'app l'appelle régulièrement (~30 s) pour se signaler active.
 - `GET /api/presence` → `200 { id, name, lastSeen, online }[]`
   (`online = last_seen != null && now - last_seen < 90 s`). Sert à afficher l'état en ligne / hors ligne des profils.
+
+### Updates (auto-update app desktop — préfixe `/updates`, hors `/api`)
+- `GET /updates/latest.json` — **pas d'auth**. Manifeste updater Tauri v2. → `200` (JSON) | `404`.
+- `GET /updates/:file` — **pas d'auth**. Artefact d'update (ex. `Studio.app.tar.gz`). → `200` | `404`.
+- `POST /updates/upload` — **auth `X-Ednah-Key`**. Multipart, dépose les fichiers dans `UPDATES_DIR`.
+  → `200 { ok, written }` | `400` (pas de fichier / pas multipart). Cf. section [Updates](#updates-auto-update-de-lapp-desktop-studio).
 
 ### Projects
 - `GET /api/projects` — query optionnels `?search=&group_id=&created_by=&status=` → `200 Project[]`

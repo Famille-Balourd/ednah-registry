@@ -22,12 +22,19 @@ RUN pnpm build
 FROM base AS runtime
 ENV NODE_ENV=production
 ENV PORT=3000
+# Dossier des artefacts d'update de l'app desktop (auto-update Tauri).
+# DOIT être monté comme volume persistant en Docker/Coolify (voir README "Updates").
+ENV UPDATES_DIR=/data/updates
+RUN mkdir -p /data/updates
 COPY package.json pnpm-lock.yaml* ./
 RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
 # Artefacts buildés + migrations versionnées (pour drizzle-kit migrate au démarrage)
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
+# Volume persistant pour les artefacts d'update (latest.json + .app.tar.gz + .sig).
+# En Coolify : déclarer un Persistent Storage monté sur /data (ou /data/updates).
+VOLUME ["/data/updates"]
 EXPOSE 3000
 # Healthcheck aligné sur /api/health
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
